@@ -9,8 +9,6 @@ Six local, play-chip games in one Q-SYS plugin: **Blackjack, Baccarat, Video Pok
 3. Start emulation or run the design on a Core and open the component.
 4. Choose a game page, set a bet, and deal or spin.
 
-Version **3.0.0** retains the previous plugin ID, filename, and Blackjack control names to preserve existing bindings where possible. Reload/update existing components in Designer to expose the new pages and controls. The existing `Casino.qsys` design is not modified.
-
 ## Shared chips and controls
 
 - Start with **1,000 play chips**, betting **20** per round.
