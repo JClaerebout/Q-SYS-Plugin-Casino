@@ -1,0 +1,327 @@
+PluginInfo = {
+  Name = "Blackjack", Version = "2.0.1", BuildVersion = "2.0.1.0",
+  Id = "d82d62e2-30bb-4fd1-a659-5bc08672dc5e",
+  Author = "Jens Claerebout",
+  Description = "Player versus dealer blackjack with chips, double down and split",
+  ShowDebug = false
+}
+
+function GetColor(props) return {24, 100, 65} end
+function GetPrettyName(props) return "Blackjack " .. PluginInfo.Version end
+function GetProperties() return {} end
+
+function GetControls(props)
+  local controls = {}
+  for _, name in ipairs({"DealerCards", "PlayerCards", "SplitCards"}) do
+    table.insert(controls, {Name=name, ControlType="Button", ButtonType="Toggle", Count=11, UserPin=false})
+  end
+  for _, name in ipairs({"Deal", "Hit", "Stand", "Double", "Split", "BetDown", "BetUp", "NewGame"}) do
+    table.insert(controls, {Name=name, ControlType="Button", ButtonType="Trigger", Count=1, UserPin=true, PinStyle="Input"})
+  end
+  for _, name in ipairs({"DealerTotal", "PlayerTotal", "SplitTotal", "Status", "Balance", "Bet", "Score"}) do
+    table.insert(controls, {Name=name, ControlType="Text", Count=1, UserPin=true, PinStyle="Output"})
+  end
+  return controls
+end
+
+function GetControlLayout(props)
+  local layout, graphics = {}, {}
+  table.insert(graphics, {Type="GroupBox", Text="BLACKJACK", Position={5,5}, Size={920,690}, Fill={24,100,65}, StrokeWidth=0, CornerRadius=12})
+  local function label(text, x, y, w)
+    table.insert(graphics, {Type="Text", Text=text, Position={x,y}, Size={w,24}, FontSize=14, Color={255,255,255}, HTextAlign="Left"})
+  end
+  local function output(name, x, y, w)
+    layout[name] = {PrettyName=name, Style="Text", Position={x,y}, Size={w,26}, IsReadOnly=true, FontSize=14}
+  end
+  local rows = {{"DealerCards","DealerTotal","DEALER",45}, {"PlayerCards","PlayerTotal","PLAYER / HAND 1",215}, {"SplitCards","SplitTotal","HAND 2 (SPLIT)",385}}
+  for _, row in ipairs(rows) do
+    label(row[3],25,row[4],220)
+    output(row[2],260,row[4],640)
+    for i=1,11 do
+      layout[row[1] .. " " .. i] = {PrettyName=row[3] .. "~Card " .. i, Style="Button", ButtonStyle="Toggle", Position={25+(i-1)*80,row[4]+32}, Size={75,105}, Margin=0, Padding=0, Color={255,255,255}, OffColor={255,255,255}, UnlinkOffColor=true}
+    end
+  end
+  output("Status",25,535,875)
+  local buttons = {{"Deal","Deal"},{"Hit","Hit"},{"Stand","Stand"},{"Double","Double down"},{"Split","Split"},{"BetDown","Bet -10"},{"BetUp","Bet +10"},{"NewGame","New game"}}
+  for i, item in ipairs(buttons) do
+    layout[item[1]] = {PrettyName="Actions~" .. item[2], Legend=item[2], Style="Button", ButtonStyle="Trigger", Position={25+(i-1)*110,575}, Size={105,35}, Color={34,76,120}}
+  end
+  label("Chips",25,623,55); output("Balance",85,623,100)
+  label("Next bet",205,623,80); output("Bet",290,623,90)
+  output("Score",405,623,495)
+  label("3:2 blackjack | Dealer stands on all 17s | One split | Split aces: one card | No insurance / surrender",25,661,875)
+  return layout, graphics
+end
+
+if Controls then
+  local rapidjson = require("rapidjson")
+  -- Build small SVG strings directly to stay within the Q-SYS callback budget.
+  local CARD_WIDTH, CARD_HEIGHT = 250, 350
+  local ranks = {"A","2","3","4","5","6","7","8","9","10","J","Q","K"}
+  local suitSymbols = {utf8.char(9824),utf8.char(9829),utf8.char(9830),utf8.char(9827)}
+  local suitColors = {"#151515","#D51F2A","#D51F2A","#151515"}
+  math.randomseed(os.time())
+
+  local pipLayouts = {
+    A={{.50,.50}},
+    ["2"]={{.50,.28},{.50,.72}},
+    ["3"]={{.50,.25},{.50,.50},{.50,.75}},
+    ["4"]={{.32,.28},{.68,.28},{.32,.72},{.68,.72}},
+    ["5"]={{.32,.25},{.68,.25},{.50,.50},{.32,.75},{.68,.75}},
+    ["6"]={{.32,.24},{.68,.24},{.32,.50},{.68,.50},{.32,.76},{.68,.76}},
+    ["7"]={{.32,.22},{.68,.22},{.50,.37},{.32,.50},{.68,.50},{.32,.78},{.68,.78}},
+    ["8"]={{.32,.20},{.68,.20},{.50,.35},{.32,.50},{.68,.50},{.50,.65},{.32,.80},{.68,.80}},
+    ["9"]={{.32,.19},{.68,.19},{.32,.39},{.68,.39},{.50,.50},{.32,.61},{.68,.61},{.32,.81},{.68,.81}},
+    ["10"]={{.32,.17},{.68,.17},{.50,.29},{.32,.39},{.68,.39},{.32,.61},{.68,.61},{.50,.71},{.32,.83},{.68,.83}}
+  }
+
+  local function addText(parts, text, x, y, size, color, weight)
+    -- All text comes from the fixed rank/suit tables, not external input.
+    parts[#parts+1] = string.format('<text x="%g" y="%g" font-size="%g" fill="%s" font-weight="%s">%s</text>', x,y,size,color,weight or "normal",text)
+  end
+
+  local function createCard(rankIndex, suitIndex, faceUp)
+    local rank, symbol, color = ranks[rankIndex], suitSymbols[suitIndex], suitColors[suitIndex]
+    local parts = {
+      '<svg xmlns="http://www.w3.org/2000/svg" width="250" height="350" viewBox="0 0 250 350">',
+      '<rect x="3" y="3" width="244" height="344" rx="18" fill="#FFFFFF" stroke="#202020" stroke-width="3"/>'
+    }
+    if not faceUp then
+      -- A few static shapes replace the old 100+ EzSVG circles and serialization.
+      parts[#parts+1] = '<rect x="9" y="9" width="232" height="332" rx="15" fill="#174C8C" stroke="#FFFFFF" stroke-width="5"/>'
+      parts[#parts+1] = '<rect x="23" y="23" width="204" height="304" rx="10" fill="none" stroke="#A9C7EA" stroke-width="3"/>'
+      parts[#parts+1] = '<path d="M125 55 L210 175 L125 295 L40 175 Z M125 90 L185 175 L125 260 L65 175 Z" fill="none" stroke="#A9C7EA" stroke-width="4"/>'
+    else
+      parts[#parts+1] = '<g font-family="Arial" text-anchor="middle">'
+      local cornerSize = rank == "10" and 30 or 36
+      addText(parts,rank,27,43,cornerSize,color,"bold")
+      addText(parts,symbol,27,75,31,color)
+      addText(parts,rank,CARD_WIDTH-27,CARD_HEIGHT-42,cornerSize,color,"bold")
+      addText(parts,symbol,CARD_WIDTH-27,CARD_HEIGHT-76,31,color)
+      local layout = pipLayouts[rank]
+      if layout then
+        local pipSize = rank == "A" and 105 or 54
+        for _,point in ipairs(layout) do
+          addText(parts,symbol,38+point[1]*(CARD_WIDTH-76),54+point[2]*(CARD_HEIGHT-108)+pipSize*.34,pipSize,color)
+        end
+      else
+        parts[#parts+1] = string.format('<rect x="58" y="92" width="134" height="166" rx="12" fill="#F4E6B5" stroke="%s" stroke-width="3"/>',color)
+        addText(parts,rank,CARD_WIDTH/2,CARD_HEIGHT/2+26,82,color,"bold")
+        addText(parts,symbol,CARD_WIDTH/2,CARD_HEIGHT/2+79,48,color)
+      end
+      parts[#parts+1] = '</g>'
+    end
+    parts[#parts+1] = '</svg>'
+    return table.concat(parts)
+  end
+
+  local deck, dealer, hands = {}, {}, {}
+  local active, phase = 1, "ready"
+  local balance, bet = 1000, 20
+  local wins, losses, pushes = 0, 0, 0
+  local message = "Choose your bet, then Deal."
+  local cardCache = {}
+
+  local function value(cards)
+    local total, aces = 0, 0
+    for _, card in ipairs(cards) do
+      total = total + (card.rank == 1 and 11 or math.min(card.rank,10))
+      if card.rank == 1 then aces = aces + 1 end
+    end
+    while total > 21 and aces > 0 do total=total-10; aces=aces-1 end
+    return total, aces > 0
+  end
+
+  local function totalText(cards)
+    local total, soft = value(cards)
+    return tostring(total) .. (total > 21 and " - BUST" or (soft and " (soft)" or ""))
+  end
+
+  local function shuffle()
+    deck = {}
+    for suit=1,4 do
+      for rank=1,13 do table.insert(deck,{rank=rank,suit=suit}) end
+    end
+    for i=#deck,2,-1 do
+      local j=math.random(i)
+      deck[i],deck[j]=deck[j],deck[i]
+    end
+  end
+
+  local function draw(cards)
+    -- A fresh single deck per round has enough cards for all three hands.
+    assert(#deck > 0, "Deck exhausted")
+    table.insert(cards,table.remove(deck))
+  end
+
+  local function canDouble()
+    local hand = hands[active]
+    return phase == "player" and hand and #hand.cards == 2 and balance >= hand.bet
+  end
+
+  local function canSplit()
+    local hand = hands[active]
+    return phase == "player" and #hands == 1 and hand and #hand.cards == 2
+      and hand.cards[1].rank == hand.cards[2].rank and balance >= hand.bet
+  end
+
+  local function renderCards(name, cards, hideHole)
+    for i=1,11 do
+      local control, card = Controls[name][i], cards[i]
+      control.IsInvisible = card == nil
+      control.IsDisabled = true
+      control.Boolean = false
+      if card then
+        local hidden = hideHole and i == 2
+        local key = hidden and "back" or (card.rank .. ":" .. card.suit)
+        if not cardCache[key] then
+          cardCache[key] = rapidjson.encode({DrawChrome=false, IconData=Crypto.Base64Encode(createCard(card.rank,card.suit,not hidden))})
+        end
+        if control.Legend ~= cardCache[key] then control.Legend = cardCache[key] end
+      else
+        if control.Legend ~= "" then control.Legend = "" end
+      end
+    end
+  end
+
+  local function refresh()
+    renderCards("DealerCards",dealer,phase == "player")
+    renderCards("PlayerCards",hands[1] and hands[1].cards or {},false)
+    renderCards("SplitCards",hands[2] and hands[2].cards or {},false)
+    if #dealer == 0 then Controls.DealerTotal.String = "Waiting for a deal"
+    elseif phase == "player" then Controls.DealerTotal.String = totalText({dealer[1]}) .. " + hidden card"
+    else Controls.DealerTotal.String = totalText(dealer) end
+    for i, name in ipairs({"PlayerTotal","SplitTotal"}) do
+      local hand = hands[i]
+      Controls[name].String = hand and (totalText(hand.cards) .. " | Bet " .. hand.bet .. (phase == "player" and active == i and " | YOUR TURN" or "") .. (hand.result and " | " .. hand.result or "")) or ""
+    end
+    Controls.Status.String = message
+    Controls.Balance.String = tostring(balance)
+    Controls.Bet.String = tostring(bet)
+    Controls.Score.String = "Wins: " .. wins .. "   Losses: " .. losses .. "   Pushes: " .. pushes
+    Controls.Deal.IsDisabled = phase == "player" or balance < bet
+    Controls.Hit.IsDisabled = phase ~= "player"
+    Controls.Stand.IsDisabled = phase ~= "player"
+    Controls.Double.IsDisabled = not canDouble()
+    Controls.Split.IsDisabled = not canSplit()
+    Controls.BetDown.IsDisabled = phase == "player" or bet <= 10
+    Controls.BetUp.IsDisabled = phase == "player" or bet+10 > balance
+    Controls.NewGame.IsDisabled = phase == "player"
+  end
+
+  local function settle()
+    phase = "done"
+    local dealerTotal = value(dealer)
+    local dealerNatural = #dealer == 2 and dealerTotal == 21
+    local results = {}
+    for i, hand in ipairs(hands) do
+      local total = value(hand.cards)
+      local natural = #hands == 1 and #hand.cards == 2 and total == 21
+      local payout = 0
+      if total > 21 then hand.result = "Bust - dealer wins"
+      elseif dealerNatural and not natural then hand.result = "Dealer blackjack"
+      elseif natural and not dealerNatural then
+        hand.result = "BLACKJACK!"; payout = hand.bet * 2.5
+      elseif dealerTotal > 21 or total > dealerTotal then
+        hand.result = "You win"; payout = hand.bet * 2
+      elseif total == dealerTotal then
+        hand.result = "Push"; payout = hand.bet
+      else hand.result = "Dealer wins" end
+      balance = balance + payout
+      if payout > hand.bet then wins=wins+1
+      elseif payout == hand.bet then pushes=pushes+1
+      else losses=losses+1 end
+      table.insert(results,(#hands > 1 and "Hand " .. i .. ": " or "") .. hand.result)
+    end
+    message = table.concat(results," / ")
+    if balance < 10 then message = message .. " | Out of chips. Press New game."
+    else
+      bet = math.min(bet,math.floor(balance/10)*10)
+      message = message .. " | Deal to play again."
+    end
+    refresh()
+  end
+
+  local function dealerTurn()
+    local live = false
+    for _, hand in ipairs(hands) do
+      if value(hand.cards) <= 21 then live = true end
+    end
+    if live then
+      while value(dealer) < 17 do draw(dealer) end
+    end
+    settle()
+  end
+
+  local function advance()
+    hands[active].done = true
+    while active < #hands do
+      active = active+1
+      if not hands[active].done and value(hands[active].cards) < 21 then
+        message = "Hand " .. active .. ": Hit, Stand or Double down."
+        refresh()
+        return
+      end
+    end
+    dealerTurn()
+  end
+
+  Controls.Deal.EventHandler = function()
+    if phase == "player" or balance < bet then return end
+    shuffle()
+    dealer, hands, active = {}, {{cards={},bet=bet}}, 1
+    balance = balance-bet
+    draw(hands[1].cards); draw(dealer); draw(hands[1].cards); draw(dealer)
+    phase = "player"
+    if value(hands[1].cards) == 21 or value(dealer) == 21 then settle(); return end
+    message = "Your turn: Hit, Stand, Double down, or Split a pair."
+    refresh()
+  end
+
+  Controls.Hit.EventHandler = function()
+    if phase ~= "player" then return end
+    draw(hands[active].cards)
+    if value(hands[active].cards) >= 21 then advance() else refresh() end
+  end
+
+  Controls.Stand.EventHandler = function()
+    if phase == "player" then advance() end
+  end
+
+  Controls.Double.EventHandler = function()
+    if not canDouble() then return end
+    local hand = hands[active]
+    balance=balance-hand.bet; hand.bet=hand.bet*2
+    draw(hand.cards)
+    advance()
+  end
+
+  Controls.Split.EventHandler = function()
+    if not canSplit() then return end
+    local hand = hands[1]
+    balance = balance-hand.bet
+    hands[2] = {cards={table.remove(hand.cards)},bet=hand.bet}
+    draw(hand.cards); draw(hands[2].cards)
+    if hand.cards[1].rank == 1 then
+      -- Split aces receive one card each; their 21 pays as an ordinary win.
+      hands[2].done = true
+      advance()
+    elseif value(hand.cards) == 21 then advance()
+    else message = "Hand 1: Hit, Stand or Double down."; refresh() end
+  end
+
+  Controls.BetDown.EventHandler = function()
+    if phase ~= "player" then bet=math.max(10,bet-10); refresh() end
+  end
+  Controls.BetUp.EventHandler = function()
+    if phase ~= "player" and bet+10 <= balance then bet=bet+10; refresh() end
+  end
+  Controls.NewGame.EventHandler = function()
+    if phase == "player" then return end
+    deck,dealer,hands = {},{},{}
+    active,phase,balance,bet,wins,losses,pushes = 1,"ready",1000,20,0,0,0
+    message = "New game: 1,000 chips. Choose your bet, then Deal."
+    refresh()
+  end
+  refresh()
+end
