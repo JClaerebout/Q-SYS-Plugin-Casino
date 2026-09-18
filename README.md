@@ -9,7 +9,7 @@ Six local, play-chip games in one Q-SYS plugin: **Blackjack, Baccarat, Video Pok
 3. Start emulation or run the design on a Core and open the component.
 4. Choose a game page, set a bet, and deal or spin.
 
-Version **3.0.0** retains the previous plugin ID, filename, and Blackjack control names to preserve existing bindings where possible. Reload/update existing components in Designer to expose the new pages and controls. The existing `blackjack.qsys` design is not modified. The standalone `blackjack.lua` example is not needed.
+Version **3.0.0** retains the previous plugin ID, filename, and Blackjack control names to preserve existing bindings where possible. Reload/update existing components in Designer to expose the new pages and controls. The existing `Casino.qsys` design is not modified.
 
 ## Shared chips and controls
 
@@ -98,19 +98,6 @@ Displays: `SlotReels` (three) and `SlotsStatus`. There are no wilds, bonus round
 Action controls expose input pins, feedback text exposes output pins, and poker holds expose both. SVG displays are UI-only buttons. Copy controls from the appropriate component page into your UCI; this plugin does not automatically create UCI pages. Include the wallet and bet controls on each UCI page, and keep a way to return to an unfinished game.
 
 The plugin uses Q-SYS [page/layout callbacks](https://help.qsys.com/DeveloperHelp/Content/Code_Examples/Basic_Plugin_Framework.htm) and a shared [timer](https://help.qsys.com/q-sys_7.0/content/Control_Scripting/Using_Lua_in_Q-Sys/Timer.htm) for animations. Spin outcomes are selected before animation; animation does not alter the outcome.
-
-## Development and validation
-
-Run from the repository root with Lua 5.3 or newer:
-
-```sh
-lua tests/blackjack_test.lua
-lua tests/casino_test.lua
-```
-
-Tests mock Q-SYS controls, timers, and encoding while running the actual rules and SVG generators. They cover all page layouts, deterministic payouts, Baccarat's banker drawing matrix, poker categories and holds, cross-game input guards, empty-wallet behavior, finite animations, 500 shuffled Blackjack rounds, and 500 mixed new-game rounds. `lua tests/blackjack_test.lua --svg` also emits all card SVGs for inspection.
-
-Manual Designer/Core validation remains necessary: verify all six pages, SVG rendering, touch behavior, UCI bindings, and animation timing. The tests do not emulate Q-SYS rendering or its callback limits.
 
 ## License
 
