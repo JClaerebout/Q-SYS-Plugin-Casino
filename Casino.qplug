@@ -1,5 +1,8 @@
+BuildVersion = "3.0.0.0"
+
 PluginInfo = {
-  Name = "Games~QCasino", Version = "3.0.0", BuildVersion = "3.0.0.0",
+  Name = "Games~QCasino v" .. BuildVersion,
+  Version = BuildVersion,
   Id = "d82d62e2-30bb-4fd1-a659-5bc08672dc5e",
   Author = "Jens Claerebout",
   Description = "Six casino games with shared play chips and SVG graphics",
