@@ -4,8 +4,8 @@ Six local, play-chip games in one Q-SYS plugin: **Blackjack, Baccarat, Video Pok
 
 ## Installation
 
-1. Install `Blackjack.qplug` in your Q-SYS Designer plugin directory.
-2. Reload the plugin, then add **Q-SYS Casino** to your design.
+1. Double-click `Blackjack.qplug`. QSysPluginHelper will prompt you to install the plugin.
+2. Add **Q-SYS Casino** to your design.
 3. Start emulation or run the design on a Core and open the component.
 4. Choose a game page, set a bet, and deal or spin.
 
